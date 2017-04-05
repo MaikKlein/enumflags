@@ -22,6 +22,7 @@ pub trait InnerBitFlags: BitOr<Self> + cmp::PartialEq + cmp::Eq
     fn insert(&mut self, other: Self);
     fn remove(&mut self, other: Self);
     fn toggle(&mut self, other: Self);
+    fn field_val(self, other: Self) -> Self::Type;
 }
 
 #[derive(Eq, Copy, Clone)]
@@ -114,6 +115,10 @@ impl<T> BitFlags<T>
 
     pub fn remove(&mut self, other: Self) {
         T::Size::remove(&mut self.val, other.val);
+    }
+
+    pub fn field_val(self, other: T::Size) -> <T::Size as InnerBitFlags>::Type {
+        T::Size::field_val(self.val, other)
     }
 }
 
