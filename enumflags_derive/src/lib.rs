@@ -192,6 +192,10 @@ fn gen_enumflags(ident: &Ident, item: &MacroInput, data: &Vec<Variant>) -> Token
                 let new_val = *self ^ other;
                 *self = new_val;
             }
+
+            fn field_val(self, other: Self) -> Self::Type {
+                (self & other).bits() >> other.bits().trailing_zeros()
+            }
         }
 
         impl Into<#ty> for #inner_name{
