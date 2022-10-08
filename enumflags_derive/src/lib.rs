@@ -2,13 +2,13 @@
 extern crate proc_macro;
 #[macro_use]
 extern crate quote;
-extern crate syn;
 extern crate proc_macro2;
-use syn::{Data, Ident, DeriveInput, DataEnum};
-use quote::Tokens;
+extern crate syn;
 use proc_macro::TokenStream;
 use proc_macro2::Span;
+use quote::Tokens;
 use std::convert::From;
+use syn::{Data, DataEnum, DeriveInput, Ident};
 
 #[proc_macro_derive(EnumFlags, attributes(EnumFlags))]
 pub fn derive_enum_flags(input: TokenStream) -> TokenStream {
@@ -38,23 +38,20 @@ fn max_value_of(ty: &str) -> Option<usize> {
 
 fn fold_expr(expr: &syn::Expr) -> u64 {
     use syn::Expr;
-    match expr{
-        &Expr::Lit(ref expr_lit) => {
-            match expr_lit.lit {
-                syn::Lit::Int(ref lit_int) => lit_int.value(),
-                _ => panic!("Only Int literals are supported")
-            }
+    match expr {
+        &Expr::Lit(ref expr_lit) => match expr_lit.lit {
+            syn::Lit::Int(ref lit_int) => lit_int.value(),
+            _ => panic!("Only Int literals are supported"),
         },
         &Expr::Binary(ref expr_binary) => {
             let l = fold_expr(&expr_binary.left);
             let r = fold_expr(&expr_binary.right);
             match expr_binary.op {
                 syn::BinOp::Shl(_) => l << r,
-                op => panic!("{:?} not supported", op)
+                op => panic!("{:?} not supported", op),
             }
-
         }
-        _ => panic!("Only literals are supported")
+        _ => panic!("Only literals are supported"),
     }
 }
 
@@ -64,12 +61,11 @@ fn extract_repr(attrs: &[syn::Attribute]) -> Option<syn::Ident> {
         .filter_map(|a| {
             if let syn::Meta::List(ref meta) = a.interpret_meta().expect("Metalist") {
                 if meta.ident.as_ref() == "repr" {
-                    return meta.nested
+                    return meta
+                        .nested
                         .iter()
                         .filter_map(|mi| {
-                            if let &syn::NestedMeta::Meta(syn::Meta::Word(ref ident)) =
-                                mi
-                            {
+                            if let &syn::NestedMeta::Meta(syn::Meta::Word(ref ident)) = mi {
                                 return Some(ident.clone());
                             }
                             None
@@ -82,12 +78,23 @@ fn extract_repr(attrs: &[syn::Attribute]) -> Option<syn::Ident> {
         .nth(0)
 }
 fn gen_enumflags(ident: &Ident, item: &DeriveInput, data: &DataEnum, gen_std: bool) -> Tokens {
-    let span  = Span::call_site();
+    let span = Span::call_site();
     let variants: Vec<_> = data.variants.iter().map(|v| v.ident.clone()).collect();
     let variants_ref = &variants;
-    let flag_values: Vec<_> = data.variants.iter()
-        .map(|v| v.discriminant.as_ref().map(|d| fold_expr(&d.1)).expect("No discriminant")).collect();
-    assert!(flag_values.iter().find(|&&v| v == 0).is_none(), "Null flag is not allowed");
+    let flag_values: Vec<_> = data
+        .variants
+        .iter()
+        .map(|v| {
+            v.discriminant
+                .as_ref()
+                .map(|d| fold_expr(&d.1))
+                .expect("No discriminant")
+        })
+        .collect();
+    assert!(
+        flag_values.iter().find(|&&v| v == 0).is_none(),
+        "Null flag is not allowed"
+    );
     let flag_values_ref1 = &flag_values;
     let flag_value_names: &Vec<_> = &flag_values
         .iter()
@@ -104,11 +111,9 @@ fn gen_enumflags(ident: &Ident, item: &DeriveInput, data: &DataEnum, gen_std: bo
     let max_allowed_value = max_value_of(ty.as_ref()).expect(&format!("{} is not supported", ty));
     assert!(
         *max_flag_value as usize <= max_allowed_value,
-        format!(
-            "Value '0b{val:b}' is too big for an {ty}",
-            val = max_flag_value,
-            ty = ty
-        )
+        "Value '0b{val:b}' is too big for an {ty}",
+        val = max_flag_value,
+        ty = ty
     );
     let wrong_flag_values: &Vec<_> = &flag_values
         .iter()
@@ -139,11 +144,9 @@ fn gen_enumflags(ident: &Ident, item: &DeriveInput, data: &DataEnum, gen_std: bo
         })
         .collect();
     assert!(
-        wrong_flag_values.len() == 0,
-        format!(
+        wrong_flag_values.is_empty(),
             "The following flags are not unique: {data:?}",
             data = wrong_flag_values
-        )
     );
     #[cfg(not(feature = "nostd"))]
     let std_path = Ident::new("std", span);
@@ -166,14 +169,22 @@ fn gen_enumflags(ident: &Ident, item: &DeriveInput, data: &DataEnum, gen_std: bo
             }
         }
     } else {
-        quote!{}
+        quote! {}
     };
-    let scope_ident = Ident::new(&format!("__scope_enumderive_{}",
-                                          item.ident.as_ref().to_lowercase()), span);
-    quote_spanned!{
+    let scope_ident = Ident::new(
+        &format!("__scope_enumderive_{}", item.ident.as_ref().to_lowercase()),
+        span,
+    );
+    quote_spanned! {
         span =>
         mod #scope_ident {
             extern crate #std_path;
+
+            // We're inside a new module named '#scope_ident',
+            // so we need to import the original type definition
+            // from the parent
+            use super::#ident;
+
             impl #std_path::ops::Not for #ident{
                 type Output = ::enumflags::BitFlags<#ident>;
                 fn not(self) -> Self::Output {
